@@ -1,0 +1,7 @@
+.cache/**
+bin/**
+compile_commands.json
+**/*.exe
+**/*.obj
+**/*.d
+**/*.iso
