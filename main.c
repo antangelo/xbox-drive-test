@@ -15,7 +15,7 @@
 #define SECS_TO_SYS_TIME (10000000)
 
 #define TRIALS 2
-#define PROFILE_HDD 0
+#define PROFILE_HDD 1
 #define PROFILE_DVD 1
 
 inline uint64_t min(uint64_t a, uint64_t b)
@@ -58,8 +58,6 @@ bool profile_drive_handle(uint64_t *speed, HANDLE *handle)
             debugPrint("Error! %lu\n", io_status.Information);
             free(buffer);
             return false;
-            //currently_read += io_status.Information;
-            //break;
         }
 
         currently_read += io_status.Information;
@@ -74,8 +72,6 @@ bool profile_drive_handle(uint64_t *speed, HANDLE *handle)
         free(buffer);
         return false;
     }
-
-    //debugPrint("%llu ns elapsed\n", elapsed_time * 100);
 
     *speed = (currently_read * SECS_TO_SYS_TIME) / elapsed_time;
 
@@ -134,6 +130,7 @@ int main()
 {
     XVideoSetMode(640, 480, 32, REFRESH_DEFAULT);
     debugClearScreen();
+    debugPrint("Xbox Drive Profiler\n\n");
 
 #if PROFILE_HDD
     run_trials(drives + 0);
