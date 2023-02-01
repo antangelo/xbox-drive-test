@@ -7,15 +7,15 @@
 
 #define BYTES_PER_KB 1024
 #define KB_PER_MB 1024
-#define TEST_READ_BYTES (BYTES_PER_KB * KB_PER_MB * 512)
+#define TEST_READ_BYTES (BYTES_PER_KB * KB_PER_MB * 10)
 
-#define TEST_BUFFER_BYTES (BYTES_PER_KB * KB_PER_MB * 1)
+#define TEST_BUFFER_BYTES (BYTES_PER_KB * KB_PER_MB * 10)
 
 // SystemTime is a count of 100ns intervals
 #define SECS_TO_SYS_TIME (10000000)
 
 #define TRIALS 2
-#define PROFILE_HDD 1
+#define PROFILE_HDD 0
 #define PROFILE_DVD 1
 
 inline uint64_t min(uint64_t a, uint64_t b)
@@ -23,17 +23,26 @@ inline uint64_t min(uint64_t a, uint64_t b)
     return a < b ? a : b;
 }
 
+inline uint64_t max(uint64_t a, uint64_t b)
+{
+    return a >= b ? a : b;
+}
+
 bool profile_drive_handle(uint64_t *speed, HANDLE *handle)
 {
-    DISK_GEOMETRY dg;
     NTSTATUS status;
     IO_STATUS_BLOCK io_status;
 
-    status = NtDeviceIoControlFile(*handle, NULL, NULL, NULL, &io_status, IOCTL_DISK_GET_DRIVE_GEOMETRY, NULL, 0, &dg, sizeof(dg));
-    if (!NT_SUCCESS(status)) return false;
+    uint64_t to_read = TEST_READ_BYTES;
 
-    uint64_t drive_bytes = dg.BytesPerSector * dg.SectorsPerTrack * dg.TracksPerCylinder * dg.Cylinders.QuadPart;
-    uint64_t to_read = min(drive_bytes, TEST_READ_BYTES);
+    {
+        DISK_GEOMETRY dg;
+        status = NtDeviceIoControlFile(*handle, NULL, NULL, NULL, &io_status, IOCTL_DISK_GET_DRIVE_GEOMETRY, NULL, 0, &dg, sizeof(dg));
+        if (NT_SUCCESS(status)) {
+            uint64_t drive_bytes = dg.BytesPerSector * dg.SectorsPerTrack * dg.TracksPerCylinder * dg.Cylinders.QuadPart;
+            to_read = min(drive_bytes, TEST_READ_BYTES);
+        }
+    }
 
     uint8_t *buffer = malloc(TEST_BUFFER_BYTES);
     uint64_t currently_read = 0;
@@ -44,11 +53,13 @@ bool profile_drive_handle(uint64_t *speed, HANDLE *handle)
     KeQuerySystemTime(&start_time);
 
     while (to_read > currently_read) {
-        status = NtReadFile(*handle, NULL, NULL, NULL, &io_status, buffer, TEST_BUFFER_BYTES, NULL);
+        status = NtReadFile(*handle, NULL, NULL, NULL, &io_status, buffer, min(to_read - currently_read, TEST_BUFFER_BYTES), NULL);
         if (!NT_SUCCESS(status) || io_status.Information == 0) {
             debugPrint("Error! %lu\n", io_status.Information);
             free(buffer);
             return false;
+            //currently_read += io_status.Information;
+            //break;
         }
 
         currently_read += io_status.Information;
@@ -84,7 +95,10 @@ bool profile_drive(uint64_t *speed, const char *volume)
     InitializeObjectAttributes(&obj_attrs, &volume_str, OBJ_CASE_INSENSITIVE, NULL, NULL);
 
     status = NtOpenFile(&handle, SYNCHRONIZE | FILE_READ_DATA, &obj_attrs, &io_status, 0, FILE_SYNCHRONOUS_IO_ALERT | FILE_NO_INTERMEDIATE_BUFFERING);
-    if (!NT_SUCCESS(status)) return false;
+    if (!NT_SUCCESS(status)) {
+        debugPrint("Failed to open device\n");
+        return false;
+    }
 
     bool success = profile_drive_handle(speed, &handle);
     NtClose(handle);
@@ -100,7 +114,6 @@ const struct drive drives[] = {
     { 'X', "\\Device\\HardDisk0\\Partition3" },
     { 'Y', "\\Device\\HardDisk0\\Partition4" },
     { 'Z', "\\Device\\HardDisk0\\Partition5" },
-    { 'E', "\\Device\\HardDisk0\\Partition1" },
     { 'D', "\\Device\\CdRom0" },
 };
 
@@ -126,11 +139,10 @@ int main()
     run_trials(drives + 0);
     run_trials(drives + 1);
     run_trials(drives + 2);
-    run_trials(drives + 3);
 #endif
 
 #if PROFILE_DVD
-    run_trials(drives + 4);
+    run_trials(drives + 3);
 #endif
 
     debugPrint("Drive test complete\n");
